@@ -136,6 +136,81 @@
 
 - `AppLog` は `Debug.Log` のラッパーで、`Log` はリリースビルドで呼び出しごと除去します。`LogWarning` と `LogError` はリリースでも出力します。
 
+## 計測ツールの使い方(Tools/PerfViewer)
+
+展示で連続稼働しても崩れないかを調べるための計測ツールです。ゲームを `-perf` 付きで起動して記録し、集計とグラフで見ます。
+
+- 必要なもの: Development Build を OFF にしたビルド([Releases](https://github.com/shoma-ohkawa/AimRacing2026_Portfolio/releases) の実行データ)と、Python 3.7 以上(標準ライブラリだけで動きます)。`Source/` だけでは動きません。
+- ビルドの場所は、`.bat` の `build:<フォルダ>` で指定します。省略すると、`.bat` と同じフォルダ、次にリポジトリ直下の `Build\` を探します。
+- 計測の前に、Unity Editor と他の GPU アプリを閉じます(`vram_mb` は PC 全体の値のため)。計測中はキーボードに触りません(Esc 以外のデバッグキーは無効になります)。
+
+| ファイル | 役割 |
+|---|---|
+| `run_game_perf.bat` | ビルドを `-perf` 付きで起動する |
+| `run_lap_variants.bat` | 自動周回を、条件ごとに無人で回す |
+| `run_idle.bat` | 放置監視(操作なしの Opening の繰り返し)を、条件ごとに無人で回す |
+| `run_exhibition_data.bat` | 展示用 PC で足りないデータを、上の 2 本を呼んで続けて取る |
+| `collect_result.bat` | 新しい記録を、1 つのテキストにまとめる(読み取り専用) |
+| `lap_report.py` | 周回・放置の結果を集計する(PC ごとに分ける) |
+| `start_viewer.bat`(`server.py`・`viewer.html`) | CSV を折れ線グラフにする(`127.0.0.1` のみ、読み取り専用) |
+
+### 1. 記録する
+
+```
+AimRacing2026.exe -perf -perflabel baseline
+```
+
+- 記録先(既定)は `%USERPROFILE%\AppData\LocalLow\日本電子専門学校ゲーム制作研究科\AimRacing2026_Unity6.3\perf\<ラベル>_<起動日時>\` です。`-perfout` で変えられます。
+- 起動のフォルダに、`meta.json`、`perf_<日付>.csv`(約 1 秒ごとに 1 行)、`transitions.csv`(遷移・ロード時間)ができます。
+- Esc で普通に終了すると、`meta.json` の `clean_exit` が `true` になります。強制終了でも、書き終えた行までの CSV は残ります。
+- `Tools\PerfViewer\run_game_perf.bat [ラベル] [ビルドのフォルダ]` でも、同じ起動ができます。
+
+### 2. 自動で周回・放置を測る
+
+```
+Tools\PerfViewer\run_lap_variants.bat [周回数] [条件] [xN] [until] [build:DIR]
+```
+
+- 引数なしで起動すると、周回数・条件・ラウンド数・`until`・ビルドの場所をコンソールで聞きます(Enter で既定値)。開始前に、同じ実行になる引数つきのコマンドを表示します。
+- Splash が見えて 5 秒後に自動周回を始め、終わると自分で終了します。1 周は約 4 分です。既定は 10 周 × 3 ラウンド × 4 条件(約 8 時間)です。
+- 手早く確かめるときは、`run_lap_variants.bat 1 base x1`(1 周、基準だけ、約 6 分)です。
+
+```
+Tools\PerfViewer\run_idle.bat [分] [条件] [xN] [until] [build:DIR]
+```
+
+- 放置は、操作なしで Opening の繰り返しを測ります。既定は 120 分 × 4 条件(約 8 時間)です。周回とは別のデータとして、別のフォルダ(`idle`)に出ます。
+
+| 条件 | 内容 |
+|---|---|
+| `base` | 何も止めない(基準) |
+| `nodlss` | 全シーンのカメラの DLSS を止める(原因の確認用の対照) |
+| `maponly` | `Map` シーンのカメラだけ DLSS を残す |
+| `unloadoff` | DLSS は有効のまま、遷移の開始時に、離れるシーンのカメラだけ止める |
+
+- `xN` は、同じ条件を回すラウンド数です。条件を順に回すので、順序や時刻の影響が特定の条件に偏りません。
+- `until` を付けると、VRAM が GPU の総量の 99% 以上になるか、FPS が基準の 8 割未満になった時点で終えます。終えた理由は、`meta.json` の `stop_reason` に入ります。
+
+### 3. 集計する
+
+```
+python Tools/PerfViewer/lap_report.py --root "<perf フォルダ>"
+```
+
+- 放置の記録は `--idle` を付け、`idle` フォルダを指定します。
+- 周ごとの FPS・メモリ・VRAM の推移、メモリの増え方(MB/周)、FPS が崩れた周、State 別の FPS、条件ごとの比較を出します。
+- `--log` で、各起動に保存された `Player.log` から周回の進み具合の行を出します。`--out <ファイル>` で保存し、`--pc <名前の一部>` で 1 台の PC の記録に絞ります。
+- 別の PC の記録は、同じ条件でも混ぜずに、PC ごとに分けて集計します。
+
+### 4. グラフで見る
+
+```
+Tools\PerfViewer\start_viewer.bat
+```
+
+- ブラウザで `http://127.0.0.1:8765/` が開きます。起動ごとに色分けして重ね、0 秒を揃えて比べられます。記録中の起動には、1 秒ごとに追従します。
+- 別の場所の記録を見るときは `--root <perf または idle のフォルダ>`、ポートを変えるときは `--port <番号>` を付けます。
+
 ## 注意事項
 
 - WIZMO を使う場合は、起動前に安全確認を行ってください。F12 で出力を止められます。
