@@ -49,7 +49,7 @@
 
 ## 実行データ
 
-【準備中】[Releases](https://github.com/shoma-ohkawa/AimRacing2026_Portfolio/releases) から `AimRacing2026_Build.zip` をダウンロードし、解凍して `AimRacing2026.exe` を起動します。
+[Releases](https://github.com/shoma-ohkawa/AimRacing2026_Portfolio/releases) から `AimRacing2026_Build.zip` をダウンロードし、解凍して `AimRacing2026.exe` を起動します。
 
 ## 実行環境
 
